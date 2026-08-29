@@ -1,0 +1,35 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Protótipo inicial.
+    // ANTES DE PUBLICAR, proteja as rotas administrativas com Firebase Authentication.
+
+    match /config/{doc} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+
+    match /candidaturas/{id} {
+      allow create: if true;
+      allow read: if true;
+      allow update, delete: if request.auth != null;
+    }
+
+    // Lista oficial de eleitores e controle de participação por cargo.
+    // Nesta versão de protótipo, a urna precisa ler e atualizar o próprio registro pelo RA.
+    // Antes do uso em produção, proteja a escrita administrativa com Authentication/App Check.
+    match /eleitores/{ra} {
+      allow read, write: if true;
+    }
+
+    // O voto NÃO contém RA/nome do eleitor.
+
+
+    match /votos/{id} {
+      allow create: if true;
+      allow read: if request.auth != null;
+      allow update, delete: if false;
+    }
+  }
+}

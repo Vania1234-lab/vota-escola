@@ -1,0 +1,584 @@
+<!DOCTYPE html><html lang="pt-BR"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Comissão Eleitoral • Vota Escola</title><link rel="stylesheet" href="styles.css">
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
+<style>
+        
+        .gestor-menu{display:grid;grid-template-columns:repeat(3,minmax(220px,1fr));gap:28px;margin:34px 0}
+        .gestor-menu-btn{background:#fff;border:3px solid #16202a;border-radius:28px;min-height:150px;padding:22px;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;box-shadow:0 10px 28px rgba(31,52,73,.08);transition:.18s ease;font:inherit;color:#17222c}
+        .gestor-menu-btn:hover{transform:translateY(-3px);box-shadow:0 14px 32px rgba(31,52,73,.15);border-color:#1559a8}
+        .gestor-menu-btn .menu-icon{font-size:2.15rem;margin-bottom:8px}
+        .gestor-menu-btn strong{font-size:1.12rem;text-transform:uppercase;letter-spacing:.02em}
+        .gestor-menu-btn span{font-size:.88rem;color:#647382;margin-top:6px}
+        .ambiente-topo{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:18px}
+        .ambiente-topo h2{margin:0}
+        .btn-voltar-painel{background:#eef3f8;border:1px solid #cbd6e0;color:#18364f}
+        .painel-home-note{margin:8px 0 0;color:#657484;text-align:center}
+
+        @media(max-width:700px){
+          .candidate-row{flex-direction:column}
+          .candidate-row>div:last-child{width:100%;flex-direction:row!important}
+          .candidate-row>div:last-child .btn{flex:1}
+          .gestor-menu{grid-template-columns:1fr;gap:16px}
+          .gestor-menu-btn{min-height:120px}
+        }
+        </style></head><body>
+<header><div class="brand"><span class="ballot">📊</span> Vota Escola • Comissão Eleitoral</div></header>
+<main class="container">
+  <section id="loginGestor" class="card" style="max-width:520px;margin:40px auto">
+    <h1>Acesso do gestor</h1>
+    <p class="muted">Entre com o usuário criado no Firebase Authentication.</p>
+    <label>E-mail</label>
+    <input id="gestorEmail" type="email" autocomplete="username" placeholder="gestor@escola.com">
+    <label>Senha</label>
+    <input id="gestorSenha" type="password" autocomplete="current-password" placeholder="Senha">
+    <button id="entrarGestor" class="btn btn-primary" style="margin-top:14px">Entrar</button>
+    <div id="loginGestorMsg"></div>
+  </section>
+  <div id="appGestor" class="hidden">
+
+  <div id="mode" class="notice"></div>
+  <section class="card">
+    <h1>Controle da eleição</h1>
+    <div class="grid grid-3">
+      <label><input id="regOpen" type="checkbox" style="width:auto"> Inscrições abertas</label>
+      <label><input id="voteOpen" type="checkbox" style="width:auto"> Votação aberta</label>
+      <label><input id="resultsOpen" type="checkbox" style="width:auto"> Resultados liberados</label>
+    </div>
+    <button id="saveConfig" class="btn btn-primary">Salvar configuração</button>
+  </section>
+
+  <section class="grid grid-3">
+    <div class="stat"><span class="muted">Candidaturas</span><strong id="sCand">0</strong></div>
+    <div class="stat"><span class="muted">Aprovadas</span><strong id="sApr">0</strong></div>
+    <div class="stat"><span class="muted">Eleitores cadastrados</span><strong id="sEleitores">0</strong></div>
+    <div class="stat"><span class="muted">Eleitores que já participaram</span><strong id="sVot">0</strong></div>
+  </section>
+
+  <section id="menuGestor">
+    <div class="gestor-menu">
+      <button class="gestor-menu-btn" type="button" onclick="abrirAmbienteGestor('ambienteCandidatos')">
+        <div class="menu-icon">👥</div>
+        <strong>Candidatos inscritos</strong>
+        <span>Analisar candidaturas</span>
+      </button>
+      <button class="gestor-menu-btn" type="button" onclick="abrirAmbienteGestor('ambienteApuracao')">
+        <div class="menu-icon">📊</div>
+        <strong>Apuração</strong>
+        <span>Acompanhar a eleição</span>
+      </button>
+      <button class="gestor-menu-btn" type="button" onclick="abrirAmbienteGestor('ambienteEleitores')">
+        <div class="menu-icon">🪪</div>
+        <strong>Cadastro de eleitores</strong>
+        <span>Adicionar e importar estudantes</span>
+      </button>
+    </div>
+    <p class="painel-home-note">Escolha uma área para administrar a eleição.</p>
+  </section>
+
+  <section id="ambienteCandidatos" class="card ambiente-gestor hidden">
+    <div class="ambiente-topo"><h2>Candidatos inscritos</h2><button class="btn btn-voltar-painel" onclick="voltarPainelGestor()">← Voltar ao painel</button></div>
+    <p class="muted">Analise as propostas e aprove ou rejeite cada candidatura.</p>
+    <div id="candList"></div>
+  </section>
+
+  <section id="ambienteApuracao" class="card ambiente-gestor hidden">
+    <div class="ambiente-topo"><h2>Apuração</h2><button class="btn btn-voltar-painel" onclick="voltarPainelGestor()">← Voltar ao painel</button></div>
+    <div id="locked" class="notice">Os resultados ficam ocultos enquanto não forem liberados.</div>
+    <div id="results" class="hidden"></div>
+  </section>
+
+  <section id="ambienteEleitores" class="card ambiente-gestor hidden">
+    <div class="ambiente-topo"><h2>Cadastro de eleitores</h2><button class="btn btn-voltar-painel" onclick="voltarPainelGestor()">← Voltar ao painel</button></div>
+    <p class="muted">Somente RAs cadastrados aqui poderão entrar na urna. Cada RA poderá registrar no máximo um voto por cargo.</p>
+
+    <div class="grid grid-3">
+      <div><label>RA / matrícula</label><input id="eleitorRA" placeholder="RA do estudante"></div>
+      <div><label>Nome completo</label><input id="eleitorNome" placeholder="Nome do estudante"></div>
+      <div><label>Turma</label><input id="eleitorTurma" placeholder="Ex.: 8º A"></div>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">
+      <button id="addEleitor" class="btn btn-primary">Cadastrar eleitor</button>
+    </div>
+
+    <hr>
+    <h3>Importar vários eleitores por CSV</h3>
+    <p class="small muted">Cabeçalhos aceitos: <strong>RA, NOME, TURMA</strong>. Pode usar vírgula ou ponto e vírgula.</p>
+    <input id="csvEleitores" type="file" accept=".csv,text/csv">
+    <button id="importarEleitores" class="btn btn-light" style="margin-top:10px">Importar CSV</button>
+    <div id="eleitorMsg"></div>
+
+    <hr>
+    <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap">
+      <div style="flex:1;min-width:240px">
+        <label>Buscar eleitor</label>
+        <input id="buscaEleitor" placeholder="Digite nome, RA ou turma">
+      </div>
+    </div>
+    <div id="eleitoresList" style="margin-top:14px"></div>
+  </section>
+  <a class="btn btn-light" href="index.html">← Voltar</a>
+  </div>
+</main>
+<script src="firebase-config.js"></script><script src="core.js"></script>
+<script>
+(async()=>{
+ const S=VotaEscola.Store; await S.init();
+
+ if(S.mode==="demo"){
+   document.getElementById("loginGestor").classList.add("hidden");
+   document.getElementById("appGestor").classList.remove("hidden");
+   document.getElementById("mode").textContent="Modo demonstração: dados locais neste navegador.";
+   await iniciarPainel();
+   return;
+ }
+
+ document.getElementById("entrarGestor").onclick=async()=>{
+   const email=document.getElementById("gestorEmail").value.trim();
+   const senha=document.getElementById("gestorSenha").value;
+   const msg=document.getElementById("loginGestorMsg");
+   if(!email || !senha){
+     msg.className="notice error";
+     msg.textContent="Informe e-mail e senha.";
+     return;
+   }
+   try{
+     await firebase.auth().signInWithEmailAndPassword(email,senha);
+   }catch(err){
+     console.error(err);
+     msg.className="notice error";
+     msg.textContent="Não foi possível entrar. Confira o e-mail e a senha.";
+   }
+ };
+
+ firebase.auth().onAuthStateChanged(async user=>{
+   if(!user){
+     document.getElementById("loginGestor").classList.remove("hidden");
+     document.getElementById("appGestor").classList.add("hidden");
+     return;
+   }
+   document.getElementById("loginGestor").classList.add("hidden");
+   document.getElementById("appGestor").classList.remove("hidden");
+   document.getElementById("mode").innerHTML=
+     `Gestor conectado: <strong>${user.email||"usuário autenticado"}</strong> 
+      <button id="sairGestor" class="btn btn-light" style="margin-left:10px;padding:7px 12px">Sair</button>`;
+   document.getElementById("sairGestor").onclick=()=>firebase.auth().signOut();
+   await iniciarPainel();
+ });
+
+ async function iniciarPainel(){
+ const el=await S.getElection();
+ regOpen.checked=!!el.registrationOpen; voteOpen.checked=!!el.votingOpen; resultsOpen.checked=!!el.resultsReleased;
+
+ async function gerarResultadoPublico(){
+   const [cargos,candidaturas,votos]=await Promise.all([
+     S.getCargos(),
+     S.listCandidaturas(),
+     S.listVotes()
+   ]);
+
+   const norm=v=>String(v??"").trim().toLocaleLowerCase("pt-BR");
+   const num=v=>{
+     const d=String(v??"").replace(/\D/g,"");
+     return d ? d.padStart(2,"0").slice(-2) : "";
+   };
+
+   const aprovadas=candidaturas.filter(c=>norm(c.status)==="aprovado");
+   const resultadoCargos=cargos.map(cargo=>{
+     const candidatos=[];
+     aprovadas.forEach(c=>{
+       (c.cargos||[]).forEach(item=>{
+         if(norm(item.cargo)===norm(cargo)){
+           candidatos.push({
+             id:c.id,
+             nome:c.nome||"Sem nome",
+             turma:c.turma||"",
+             numero:num(item.numero)
+           });
+         }
+       });
+     });
+
+     const votosCargo=votos.filter(v=>norm(v.cargo)===norm(cargo));
+     const brancos=votosCargo.filter(v=>v.tipo==="branco").length;
+     const nulos=votosCargo.filter(v=>v.tipo==="nulo").length;
+     const validos=votosCargo.filter(v=>v.tipo==="valido").length;
+
+     candidatos.forEach(c=>{
+       c.votos=votosCargo.filter(v=>
+         v.tipo==="valido" &&
+         (
+           (v.candidatoId && String(v.candidatoId)===String(c.id)) ||
+           (!v.candidatoId && num(v.numero)===num(c.numero))
+         )
+       ).length;
+       c.percentual=validos ? Number((c.votos/validos*100).toFixed(2)) : 0;
+     });
+
+     candidatos.sort((a,b)=>b.votos-a.votos || String(a.numero).localeCompare(String(b.numero)));
+     const maior=candidatos.length ? candidatos[0].votos : 0;
+     const vencedores=maior>0 ? candidatos.filter(c=>c.votos===maior).map(c=>c.id) : [];
+
+     return {
+       cargo,
+       total:votosCargo.length,
+       validos,
+       brancos,
+       nulos,
+       candidatos,
+       vencedores
+     };
+   });
+
+   await S.savePublicResults({
+     electionName:el.name||"Eleição do Grêmio Estudantil",
+     released:true,
+     generatedAt:new Date().toISOString(),
+     cargos:resultadoCargos
+   });
+ }
+
+ saveConfig.onclick=async()=>{
+   try{
+     saveConfig.disabled=true;
+     saveConfig.textContent="Salvando...";
+
+     const novaConfig={
+       ...el,
+       registrationOpen:regOpen.checked,
+       votingOpen:voteOpen.checked,
+       resultsReleased:resultsOpen.checked
+     };
+
+     // Primeiro salva a configuração.
+     await S.setElection(novaConfig);
+
+     // Se os resultados foram liberados, gera uma fotografia pública da apuração.
+     // Nenhum RA, nome de eleitor ou vínculo entre eleitor e voto é copiado.
+     if(resultsOpen.checked){
+       saveConfig.textContent="Gerando apuração...";
+       await gerarResultadoPublico();
+     }
+
+     alert(resultsOpen.checked
+       ? "Configuração salva e resultado público gerado com sucesso."
+       : (voteOpen.checked
+          ? "Configuração salva. A URNA ESTÁ ABERTA para votação."
+          : "Configuração salva. A urna está fechada."));
+   }catch(err){
+     console.error(err);
+     alert("Não foi possível salvar a configuração/apuração: "+(err?.message||err));
+   }finally{
+     saveConfig.disabled=false;
+     saveConfig.textContent="Salvar configuração";
+   }
+ };
+ async function refresh(){
+   const cs=await S.listCandidaturas(), voters=await S.listVoters();
+   sCand.textContent=cs.length;
+   sApr.textContent=cs.filter(x=>x.status==="aprovado").length;
+   sEleitores.textContent=voters.length;
+   sVot.textContent=voters.filter(x=>Array.isArray(x.votedCargos) && x.votedCargos.length>0).length;
+   renderEleitores(voters);
+   candList.innerHTML=cs.length?cs.map(c=>`
+     <div class="candidate-row" style="align-items:flex-start">
+       <div class="avatar" style="flex:0 0 78px;width:78px;height:96px">
+         ${c.foto?`<img src="${c.foto}" style="width:100%;height:100%;object-fit:cover;border-radius:10px">`:"👤"}
+       </div>
+
+       <div style="flex:1;min-width:0">
+         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+           <strong style="font-size:1.12rem">${c.nome}</strong>
+           <span class="badge badge-${c.status}">${c.status}</span>
+         </div>
+
+         <div class="small muted" style="margin-top:4px">
+           ${c.turma||""} ${c.ra?`• RA ${c.ra}`:""}
+         </div>
+
+         <div style="margin-top:10px">
+           <strong>Cargo(s):</strong><br>
+           ${(c.cargos||[]).map(x=>`${x.cargo} — número ${x.numero}`).join("<br>")}
+         </div>
+
+         <div style="margin-top:12px;padding:12px;background:#f7f9fb;border-radius:10px;border:1px solid #e3e8ed">
+           <strong>Propostas do candidato</strong>
+           <div style="margin-top:7px;white-space:pre-wrap;line-height:1.45">${esc(c.propostas||"Nenhuma proposta informada.")}</div>
+         </div>
+
+         ${c.status==="rejeitado" && c.motivoRejeicao ? `
+           <div class="notice error" style="margin-top:12px">
+             <strong>Motivo da negativa:</strong><br>
+             <span style="white-space:pre-wrap">${esc(c.motivoRejeicao)}</span>
+           </div>` : ""}
+
+         <div id="rejeicao-${c.id}" class="hidden" style="margin-top:12px;padding:12px;background:#fff7f7;border:1px solid #efcaca;border-radius:10px">
+           <label>Motivo da negativa da candidatura</label>
+           <textarea id="motivo-${c.id}" placeholder="Explique de forma objetiva por que esta candidatura não foi aceita."></textarea>
+           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+             <button class="btn btn-danger" onclick="confirmarRejeicao('${c.id}')">Confirmar negativa</button>
+             <button class="btn btn-light" onclick="cancelarRejeicao('${c.id}')">Cancelar</button>
+           </div>
+         </div>
+       </div>
+
+       <div style="display:flex;gap:8px;flex-direction:column;min-width:125px">
+         <button class="btn btn-success" onclick="aprovar('${c.id}')">Aprovar</button>
+         <button class="btn btn-danger" onclick="abrirRejeicao('${c.id}')">Rejeitar</button>
+       </div>
+     </div>`).join(""):"<p>Nenhuma candidatura.</p>";
+   if(el.resultsReleased) await renderResults();
+ }
+
+
+
+ window.abrirAmbienteGestor=(id)=>{
+   document.getElementById("menuGestor")?.classList.add("hidden");
+   document.querySelectorAll(".ambiente-gestor").forEach(el=>el.classList.add("hidden"));
+   const alvo=document.getElementById(id);
+   if(alvo){
+     alvo.classList.remove("hidden");
+     alvo.scrollIntoView({behavior:"smooth",block:"start"});
+   }
+ };
+ window.voltarPainelGestor=()=>{
+   document.querySelectorAll(".ambiente-gestor").forEach(el=>el.classList.add("hidden"));
+   document.getElementById("menuGestor")?.classList.remove("hidden");
+   window.scrollTo({top:0,behavior:"smooth"});
+ };
+
+ async function lerArquivoTextoBR(file){
+   const buffer=await file.arrayBuffer();
+
+   // 1) Tenta UTF-8.
+   let texto=new TextDecoder("utf-8",{fatal:false}).decode(buffer);
+
+   // Se houver caracteres de substituição, provavelmente o arquivo veio do Excel em ANSI/Windows-1252.
+   if(texto.includes("\uFFFD")){
+     try{
+       texto=new TextDecoder("windows-1252").decode(buffer);
+     }catch(e){
+       // fallback compatível com navegadores mais antigos
+       texto=new TextDecoder("iso-8859-1").decode(buffer);
+     }
+   }
+
+   // Remove BOM e normaliza quebras de linha.
+   return texto.replace(/^\uFEFF/,"").replace(/\r\n?/g,"\n");
+ }
+
+ let cacheEleitores=[];
+
+ function renderEleitores(voters){
+   cacheEleitores=[...voters].sort((a,b)=>(a.nome||"").localeCompare(b.nome||"","pt-BR"));
+   const termo=(document.getElementById("buscaEleitor")?.value||"").trim().toLowerCase();
+   const lista=cacheEleitores.filter(v=>{
+     if(!termo) return true;
+     return [v.nome,v.ra,v.turma].some(x=>String(x||"").toLowerCase().includes(termo));
+   });
+
+   const box=document.getElementById("eleitoresList");
+   if(!lista.length){
+     box.innerHTML="<p class='muted'>Nenhum eleitor encontrado.</p>";
+     return;
+   }
+
+   box.innerHTML=`
+     <div style="overflow:auto">
+       <table>
+         <thead><tr><th>RA</th><th>Nome</th><th>Turma</th><th>Votou em</th><th>Ação</th></tr></thead>
+         <tbody>
+           ${lista.map(v=>`
+             <tr>
+               <td>${esc(v.ra||v.id||"")}</td>
+               <td><strong>${esc(v.nome||"")}</strong></td>
+               <td>${esc(v.turma||"")}</td>
+               <td>${Array.isArray(v.votedCargos) && v.votedCargos.length ? v.votedCargos.map(esc).join("<br>") : "<span class='muted'>Nenhum cargo ainda</span>"}</td>
+               <td><button class="btn btn-danger small" onclick="excluirEleitor('${String(v.ra||v.id||"").replaceAll("'","&#039;")}')">Excluir</button></td>
+             </tr>`).join("")}
+         </tbody>
+       </table>
+     </div>`;
+ }
+
+ document.getElementById("buscaEleitor").addEventListener("input",()=>renderEleitores(cacheEleitores));
+
+ document.getElementById("addEleitor").onclick=async()=>{
+   const ra=document.getElementById("eleitorRA").value.trim();
+   const nome=document.getElementById("eleitorNome").value.trim();
+   const turma=document.getElementById("eleitorTurma").value.trim();
+
+   if(!ra || !nome || !turma){
+     eleitorMsg("Preencha RA, nome e turma.",false);
+     return;
+   }
+
+   try{
+     await S.addVoter({ra,nome,turma,ativo:true});
+     document.getElementById("eleitorRA").value="";
+     document.getElementById("eleitorNome").value="";
+     document.getElementById("eleitorTurma").value="";
+     eleitorMsg("Eleitor cadastrado com sucesso.",true);
+     await refresh();
+   }catch(err){
+     console.error(err);
+     eleitorMsg("Não foi possível cadastrar o eleitor: "+(err.message||err),false);
+   }
+ };
+
+ window.excluirEleitor=async(ra)=>{
+   if(!confirm(`Excluir o eleitor de RA ${ra}?`)) return;
+   try{
+     await S.deleteVoter(ra);
+     await refresh();
+   }catch(err){
+     alert("Não foi possível excluir o eleitor.");
+   }
+ };
+
+ document.getElementById("importarEleitores").onclick=async()=>{
+   const file=document.getElementById("csvEleitores").files?.[0];
+   if(!file){
+     eleitorMsg("Escolha um arquivo CSV.",false);
+     return;
+   }
+
+   try{
+     const text=await lerArquivoTextoBR(file);
+     const linhas=text.split("\n").filter(l=>l.trim());
+     if(linhas.length<2) throw new Error("O CSV não possui linhas de dados.");
+
+     const delimiter=linhas[0].includes(";") ? ";" : ",";
+     const parseLine=line=>{
+       const out=[]; let cur="", quoted=false;
+       for(let i=0;i<line.length;i++){
+         const ch=line[i];
+         if(ch==='"'){
+           if(quoted && line[i+1]==='"'){ cur+='"'; i++; }
+           else quoted=!quoted;
+         }else if(ch===delimiter && !quoted){
+           out.push(cur.trim()); cur="";
+         }else cur+=ch;
+       }
+       out.push(cur.trim());
+       return out;
+     };
+
+     const headers=parseLine(linhas[0]).map(h=>h.trim().toLowerCase());
+     const idxRA=headers.findIndex(h=>["ra","r.a.","r.a","matricula","matrícula"].includes(h));
+     const idxNome=headers.findIndex(h=>["nome","nome completo","aluno","estudante"].includes(h));
+     const idxTurma=headers.findIndex(h=>["turma","classe","sala"].includes(h));
+
+     if(idxRA<0 || idxNome<0 || idxTurma<0){
+       throw new Error("Use cabeçalhos RA, NOME e TURMA.");
+     }
+
+     const itens=[];
+     for(const linha of linhas.slice(1)){
+       const c=parseLine(linha);
+       const ra=(c[idxRA]||"").trim();
+       const nome=(c[idxNome]||"").trim();
+       const turma=(c[idxTurma]||"").trim();
+       if(ra && nome && turma) itens.push({ra,nome,turma,ativo:true});
+     }
+
+     if(!itens.length) throw new Error("Nenhum eleitor válido foi encontrado.");
+     await S.addVoters(itens);
+     document.getElementById("csvEleitores").value="";
+     eleitorMsg(`${itens.length} eleitor(es) importado(s) com sucesso.`,true);
+     await refresh();
+   }catch(err){
+     console.error(err);
+     eleitorMsg("Erro ao importar CSV: "+(err.message||err),false);
+   }
+ };
+
+ function eleitorMsg(texto,ok){
+   const m=document.getElementById("eleitorMsg");
+   m.className="notice "+(ok?"success":"error");
+   m.textContent=texto;
+ }
+
+ function esc(v){
+   return String(v??"")
+     .replaceAll("&","&amp;")
+     .replaceAll("<","&lt;")
+     .replaceAll(">","&gt;")
+     .replaceAll('"',"&quot;")
+     .replaceAll("'","&#039;");
+ }
+
+ window.aprovar=async(id)=>{
+   if(!confirm("Aprovar esta candidatura?")) return;
+   await S.updateCandidatura(id,{
+     status:"aprovado",
+     motivoRejeicao:"",
+     analisadoEm:new Date().toISOString()
+   });
+   await refresh();
+ }
+
+ window.abrirRejeicao=(id)=>{
+   document.getElementById("rejeicao-"+id).classList.remove("hidden");
+   setTimeout(()=>document.getElementById("motivo-"+id).focus(),50);
+ }
+
+ window.cancelarRejeicao=(id)=>{
+   const box=document.getElementById("rejeicao-"+id);
+   const campo=document.getElementById("motivo-"+id);
+   if(campo) campo.value="";
+   if(box) box.classList.add("hidden");
+ }
+
+ window.confirmarRejeicao=async(id)=>{
+   const campo=document.getElementById("motivo-"+id);
+   const motivo=(campo?.value||"").trim();
+   if(!motivo){
+     alert("Informe o motivo da negativa antes de confirmar.");
+     campo?.focus();
+     return;
+   }
+   if(motivo.length<10){
+     alert("Descreva o motivo com um pouco mais de detalhe.");
+     campo?.focus();
+     return;
+   }
+
+   await S.updateCandidatura(id,{
+     status:"rejeitado",
+     motivoRejeicao:motivo,
+     analisadoEm:new Date().toISOString()
+   });
+   await refresh();
+ }
+ async function renderResults(){
+   locked.classList.add("hidden"); results.classList.remove("hidden");
+   const votos=await S.listVotes(), cargos=await S.getCargos(), cand=await S.listCandidaturas();
+   let html="";
+   for(const cargo of cargos){
+     const vs=votos.filter(v=>v.cargo===cargo);
+     const aprov=[];
+     cand.filter(c=>c.status==="aprovado").forEach(c=>(c.cargos||[]).forEach(x=>{if(x.cargo===cargo) aprov.push({id:c.id,nome:c.nome,numero:x.numero})}));
+     const counts={};
+     aprov.forEach(c=>counts[c.id]=0);
+     vs.filter(v=>v.tipo==="valido").forEach(v=>counts[v.candidatoId]=(counts[v.candidatoId]||0)+1);
+     const branco=vs.filter(v=>v.tipo==="branco").length, nulo=vs.filter(v=>v.tipo==="nulo").length;
+     const sorted=[...aprov].sort((a,b)=>(counts[b.id]||0)-(counts[a.id]||0));
+     const max=Math.max(1,...sorted.map(c=>counts[c.id]||0));
+     html+=`<h3>${cargo}</h3>`;
+     if(!sorted.length) html+="<p class='muted'>Nenhum candidato aprovado.</p>";
+     else sorted.forEach((c,i)=>{
+       const n=counts[c.id]||0, pct=(n/max*100).toFixed(0);
+       html+=`<div style="margin:10px 0"><strong>${i===0?"🏆 ":""}${c.numero} • ${c.nome}</strong> — ${n} voto(s)
+       <div class="result-bar"><div style="width:${pct}%"></div></div></div>`;
+     });
+     html+=`<p class="small">Brancos: ${branco} • Nulos: ${nulo} • Total: ${vs.length}</p><hr>`;
+   }
+   results.innerHTML=html;
+ }
+ await refresh();
+ } // /* fim iniciarPainel */
+})();
+</script></body></html>
