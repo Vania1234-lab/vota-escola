@@ -212,20 +212,77 @@
  async function gerarESalvarCandidatura(dadosBase){
    const existentes=await S.listCandidaturas();
 
-   // Um estudante só pode ter uma candidatura.
-   const raNormalizado=String(dadosBase.ra||"").replace(/\D/g,"") || String(dadosBase.ra||"").trim().toLowerCase();
-   const jaExiste=existentes.some(c=>{
-     const cra=String(c.ra||"").replace(/\D/g,"") || String(c.ra||"").trim().toLowerCase();
-     return cra===raNormalizado;
-   });
-   if(jaExiste) throw new Error("Este estudante já possui uma candidatura cadastrada.");
+   const normalizarRA=v=>String(v||"").replace(/\D/g,"") || String(v||"").trim().toLowerCase();
+   const normalizarNumero=v=>{
+     const d=String(v??"").replace(/\D/g,"");
+     return d ? d.padStart(2,"0").slice(-2) : "";
+   };
+   const raNormalizado=normalizarRA(dadosBase.ra);
 
-   // Mantém compatibilidade com a urna atual, que trabalha com 2 dígitos.
+   // Regra de recandidatura:
+   // - candidatura pendente/aprovada bloqueia uma nova inscrição;
+   // - candidatura rejeitada pode ser reenviada;
+   // - no reenvio, o estudante mantém exatamente o mesmo número eleitoral.
+   const candidaturasDoAluno=existentes.filter(c=>normalizarRA(c.ra)===raNormalizado);
+   const ativa=candidaturasDoAluno.find(c=>String(c.status||"").trim().toLowerCase()!=="rejeitado");
+   if(ativa){
+     const status=String(ativa.status||"").trim().toLowerCase();
+     if(status==="pendente") throw new Error("Este estudante já possui uma candidatura aguardando análise.");
+     if(status==="aprovado") throw new Error("Este estudante já possui uma candidatura aprovada.");
+     throw new Error("Este estudante já possui uma candidatura ativa.");
+   }
+
+   // Se houve rejeição anterior, recupera o número já reservado ao estudante.
+   // Caso existam registros antigos duplicados, usa a rejeição mais recente que tenha número.
+   const rejeitadas=[...candidaturasDoAluno]
+     .filter(c=>String(c.status||"").trim().toLowerCase()==="rejeitado")
+     .reverse();
+   const anterior=rejeitadas.find(c=>normalizarNumero(c.numeroEleitoral || c.cargos?.[0]?.numero));
+
+   if(anterior){
+     const numero=normalizarNumero(anterior.numeroEleitoral || anterior.cargos?.[0]?.numero);
+     const dados={
+       ...dadosBase,
+       cargos:[{cargo:dadosBase.cargo,numero}],
+       numeroEleitoral:numero,
+       status:"pendente",
+       motivoRejeicao:"",
+       analisadoEm:null
+     };
+
+     if(S.mode==="firebase" && S.db && window.firebase?.firestore){
+       // Atualiza o MESMO documento. Assim o número continua reservado e não
+       // pode ser sorteado para outro estudante.
+       const ref=S.db.collection("candidaturas").doc(anterior.id);
+       await S.db.runTransaction(async tx=>{
+         const snap=await tx.get(ref);
+         if(!snap.exists) throw new Error("CANDIDATURA_ANTERIOR_NAO_ENCONTRADA");
+         const atual=snap.data()||{};
+         if(normalizarRA(atual.ra)!==raNormalizado) throw new Error("RA_DIVERGENTE");
+         if(String(atual.status||"").trim().toLowerCase()!=="rejeitado"){
+           throw new Error("Esta candidatura não está liberada para nova tentativa.");
+         }
+         tx.update(ref,{
+           ...dados,
+           reenviadoEm:firebase.firestore.FieldValue.serverTimestamp()
+         });
+       });
+     }else{
+       await S.updateCandidatura(anterior.id,{...dados,reenviadoEm:new Date().toISOString()});
+     }
+
+     return {numero,dados,reenvio:true};
+   }
+
+   // Primeira candidatura: sorteia um número que nunca tenha sido usado.
+   // Números de candidaturas rejeitadas também permanecem ocupados/reservados.
    const usados=new Set();
    existentes.forEach(c=>{
+     const principal=normalizarNumero(c.numeroEleitoral);
+     if(principal) usados.add(principal);
      (c.cargos||[]).forEach(item=>{
-       const d=String(item.numero??"").replace(/\D/g,"");
-       if(d) usados.add(d.padStart(2,"0").slice(-2));
+       const n=normalizarNumero(item.numero);
+       if(n) usados.add(n);
      });
    });
 
@@ -236,8 +293,8 @@
    }
    if(!livres.length) throw new Error("Não há números eleitorais disponíveis entre 01 e 99.");
 
-   // Firebase: reserva o número de forma atômica. A candidatura já nasce
-   // como PENDENTE e só vira aprovada/rejeitada quando o gestor analisar.
+   // Firebase: reserva o número de forma atômica. O documento usa o próprio
+   // número como ID, impedindo que outro candidato receba o mesmo número.
    if(S.mode==="firebase" && S.db && window.firebase?.firestore){
      const tentativas=[...livres].sort(()=>Math.random()-.5);
      let ultimoErro=null;
@@ -255,7 +312,7 @@
              createdAt:firebase.firestore.FieldValue.serverTimestamp()
            });
          });
-         return {numero,dados};
+         return {numero,dados,reenvio:false};
        }catch(err){
          ultimoErro=err;
          if(String(err?.message||err).includes("NUMERO_OCUPADO")) continue;
@@ -269,7 +326,7 @@
    const numero=livres[Math.floor(Math.random()*livres.length)];
    const dados={...dadosBase,cargos:[{cargo:dadosBase.cargo,numero}],numeroEleitoral:numero};
    await S.saveCandidatura(dados);
-   return {numero,dados};
+   return {numero,dados,reenvio:false};
  }
 
  document.getElementById("form").addEventListener("submit", async e=>{
@@ -308,12 +365,12 @@
        throw new Error("Preencha todos os campos obrigatórios.");
      }
 
-     const {numero}=await gerarESalvarCandidatura(dadosBase);
+     const {numero,reenvio}=await gerarESalvarCandidatura(dadosBase);
 
      e.target.reset();
      fotoPreview.classList.add("hidden");
      fotoPreview.removeAttribute("src");
-     show(`Candidatura enviada com sucesso! Seu número eleitoral é ${numero}. A candidatura está aguardando aprovação da comissão eleitoral.`,true);
+     show(reenvio ? `Nova tentativa enviada com sucesso! Seu número eleitoral continua sendo ${numero}. A candidatura voltou para análise da comissão eleitoral.` : `Candidatura enviada com sucesso! Seu número eleitoral é ${numero}. A candidatura está aguardando aprovação da comissão eleitoral.`,true);
    }catch(err){
      console.error("Erro ao enviar candidatura:",err);
      const detalhe=(err && (err.code || err.message)) ? ` (${err.code || err.message})` : "";
