@@ -221,13 +221,25 @@
      const maior=candidatos.length ? candidatos[0].votos : 0;
      const vencedores=maior>0 ? candidatos.filter(c=>c.votos===maior).map(c=>c.id) : [];
 
+     // O resultado público recebe somente dados necessários para exibição.
+     // RA e outros dados administrativos não são copiados para config/resultadoPublico.
+     const candidatosPublicos=candidatos.map(c=>({
+       id:c.id,
+       nome:c.nome||"",
+       turma:c.turma||"",
+       foto:c.foto||"",
+       numero:c.numero||"",
+       votos:Number(c.votos||0),
+       percentual:Number(c.percentual||0)
+     }));
+
      return {
        cargo,
        total:votosCargo.length,
        validos,
        brancos,
        nulos,
-       candidatos,
+       candidatos:candidatosPublicos,
        vencedores
      };
    });
@@ -298,10 +310,18 @@
            ${c.turma||""} ${c.ra?`• RA ${c.ra}`:""}
          </div>
 
-         <div style="margin-top:10px">
-           <strong>Cargo(s):</strong><br>
-           ${(c.cargos||[]).map(x=>`${x.cargo} — número ${x.numero}`).join("<br>")}
+         <div class="candidate-election-data">
+           <div class="candidate-number-box">
+             <span>Número eleitoral</span>
+             <strong>${esc(c.numeroEleitoral || c.cargos?.[0]?.numero || "--")}</strong>
+           </div>
+           <div class="candidate-role-box">
+             <span>Cargo escolhido</span>
+             <strong>${esc(c.cargos?.[0]?.cargo || c.cargo || "Não informado")}</strong>
+           </div>
          </div>
+
+         ${c.status==="pendente" ? `<div class="notice" style="margin-top:12px"><strong>Aguardando análise.</strong> Confira número, cargo, foto e propostas antes de aprovar ou rejeitar.</div>` : ""}
 
          <div style="margin-top:12px;padding:12px;background:#f7f9fb;border-radius:10px;border:1px solid #e3e8ed">
            <strong>Propostas do candidato</strong>
@@ -324,9 +344,11 @@
          </div>
        </div>
 
-       <div style="display:flex;gap:8px;flex-direction:column;min-width:125px">
-         <button class="btn btn-success" onclick="aprovar('${c.id}')">Aprovar</button>
-         <button class="btn btn-danger" onclick="abrirRejeicao('${c.id}')">Rejeitar</button>
+       <div style="display:flex;gap:8px;flex-direction:column;min-width:150px">
+         ${c.status==="pendente" ? `
+           <button class="btn btn-success" onclick="aprovar('${c.id}')">Aprovar candidatura</button>
+           <button class="btn btn-danger" onclick="abrirRejeicao('${c.id}')">Rejeitar candidatura</button>
+         ` : `<span class="badge badge-${c.status}" style="text-align:center">${c.status}</span>`}
        </div>
      </div>`).join(""):"<p>Nenhuma candidatura.</p>";
    if(el.resultsReleased) await renderResults();

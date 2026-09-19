@@ -318,7 +318,7 @@
       vencedores.forEach(v=>{
         cards.push(`
           <div class="winner-card">
-            <div class="winner-photo" style="display:grid;place-items:center;font-size:2rem">🏆</div>
+            ${v.foto ? `<img class="winner-photo" src="${v.foto}" alt="Foto de ${esc(v.nome)}">` : `<div class="winner-photo" style="display:grid;place-items:center;font-size:2rem">👤</div>`}
             <div>
               <div class="winner-role">${esc(d.cargo)}</div>
               <div class="winner-name">${esc(v.nome)} ${vencedores.length>1?'<span class="tie-badge">EMPATE</span>':''}</div>
@@ -353,7 +353,7 @@
             const tied=ids.length>1 && isWinner;
             return `
               <div class="candidate-result">
-                <div style="width:56px;height:68px;border-radius:9px;background:#edf0f2;display:grid;place-items:center;font-size:1.5rem">👤</div>
+                ${c.foto ? `<img src="${c.foto}" alt="Foto de ${esc(c.nome)}">` : `<div style="width:56px;height:68px;border-radius:9px;background:#edf0f2;display:grid;place-items:center;font-size:1.5rem">👤</div>`}
                 <div>
                   <strong>Nº ${esc(c.numero)} — ${esc(c.nome)}</strong>
                   ${isWinner ? (tied?'<span class="tie-badge">EMPATE EM 1º</span>':'<span class="winner-badge">ELEITO(A)</span>') : ''}

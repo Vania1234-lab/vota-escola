@@ -1,6 +1,31 @@
-<!DOCTYPE html><html lang="pt-BR"><head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Vota Escola</title><link rel="stylesheet" href="./styles.css?v=37">
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Inscrição concluída • Vota Escola</title>
+  <link rel="stylesheet" href="./styles.css?v=37">
+  <style>
+    .done-wrap{width:min(720px,94%);margin:50px auto}
+    .done-card{
+      background:#fff;border:1px solid #d8e1ea;border-radius:24px;
+      padding:36px;text-align:center;box-shadow:0 14px 38px rgba(23,79,143,.14)
+    }
+    .check{
+      width:74px;height:74px;border-radius:50%;background:#e8f6ed;color:#198754;
+      display:grid;place-items:center;font-size:2.2rem;margin:0 auto 18px
+    }
+    .number{
+      font-size:clamp(3.5rem,12vw,7rem);font-weight:950;color:#174f8f;
+      line-height:1;margin:18px 0
+    }
+    .pending{
+      background:#fff5da;border:1px solid #efd58c;border-radius:14px;
+      padding:15px;margin:20px 0;color:#6c5400
+    }
+    .roles{margin:10px 0 0;color:#66788a}
+  </style>
+
 <style id="vota-escola-design-v33">
 :root{
   --ve-blue:#15539a;
@@ -275,22 +300,53 @@ tr:last-child td{border-bottom:none!important}
 
 </head>
 <body>
-<header><div class="brand"><span class="ballot">🗳️</span> Vota Escola</div></header>
-<main class="container">
-  <section class="hero card">
-    <h1>Vota Escola</h1>
-    <p>Inscrição, votação e apuração do Grêmio Estudantil em um só sistema.</p>
-    <div class="menu-cards">
-      <a class="menu-card" href="candidato.html"><div class="ico">🙋</div><h3>Quero me candidatar</h3><p>Escolha um único cargo e faça sua inscrição.</p></a>
-      <a class="menu-card" href="urna.html"><div class="ico">🗳️</div><h3>Votar</h3><p>Acesse a urna eletrônica escolar.</p></a>
-      <a class="card action-card" href="resultados.html">
-        <div class="action-icon">🏆</div>
-        <h2>Resultado da Eleição</h2>
-        <p>Veja a chapa formada e o percentual de votação de cada candidato.</p>
-      </a>
-      <a class="menu-card" href="gestor.html"><div class="ico">📊</div><h3>Comissão eleitoral</h3><p>Acompanhe inscrições e resultados.</p></a>
+<header><div class="brand">✅ Vota Escola • Inscrição concluída</div></header>
+
+<main class="done-wrap">
+  <section class="done-card">
+    <div class="check">✓</div>
+    <h1>Inscrição enviada!</h1>
+    <p id="nome"></p>
+
+    <div class="small muted">Seu número eleitoral é</div>
+    <div id="numero" class="number">—</div>
+
+    <div id="cargos" class="roles"></div>
+
+    <div class="pending">
+      <strong>Atenção:</strong> sua candidatura ainda depende da aprovação da Comissão Eleitoral.
+      Somente após a aprovação seu nome aparecerá na urna.
     </div>
+
+    <a class="btn btn-primary" href="index.html">Concluir</a>
   </section>
 </main>
-<footer>Vota Escola • Sistema de Eleição do Grêmio Estudantil</footer>
-</body></html>
+
+<script>
+(()=>{
+  try{
+    const raw=
+      sessionStorage.getItem("votaEscolaUltimaCandidatura") ||
+      localStorage.getItem("votaEscolaUltimaCandidatura");
+
+    if(!raw){
+      document.getElementById("nome").textContent=
+        "A inscrição foi concluída, mas não foi possível recuperar os dados do número nesta tela.";
+      document.getElementById("numero").textContent="—";
+      return;
+    }
+
+    const d=JSON.parse(raw);
+    document.getElementById("nome").textContent=d.nome||"";
+    document.getElementById("numero").textContent=d.numero||"—";
+    document.getElementById("cargos").textContent=
+      Array.isArray(d.cargos) && d.cargos.length
+        ? "Cargo(s): "+d.cargos.join(" • ")
+        : "";
+  }catch(e){
+    console.error(e);
+  }
+})();
+</script>
+</body>
+</html>

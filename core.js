@@ -71,7 +71,12 @@
       return out;
     },
     async getVoter(ra){
-      return LS.get("ve_eleitores",[]).find(x=>String(x.ra)===String(ra)) || null;
+      const bruto=String(ra||"").trim();
+      const digitos=bruto.replace(/\D/g,"");
+      return LS.get("ve_eleitores",[]).find(x=>{
+        const xr=String(x.ra||"").trim();
+        return xr===bruto || (digitos && xr.replace(/\D/g,"")===digitos);
+      }) || null;
     },
     async addVoter(data){
       const ra=String(data.ra||"").trim();
@@ -137,7 +142,9 @@
     async init(){
       if(!firebaseReady) return;
       if(!window.firebase) throw new Error("SDK Firebase não carregado.");
-      this.app = firebase.initializeApp(cfg);
+      this.app = firebase.apps && firebase.apps.length
+        ? firebase.app()
+        : firebase.initializeApp(cfg);
       this.db = firebase.firestore();
     },
     async ensureDefaults(){
@@ -200,8 +207,30 @@
       return out;
     },
     async getVoter(ra){
-      const s=await this.db.collection("eleitores").doc(String(ra)).get();
-      return s.exists ? {id:s.id,ra:s.id,...s.data()} : null;
+      const bruto=String(ra||"").trim();
+      if(!bruto) return null;
+
+      // 1. Busca exatamente como foi cadastrado.
+      let s=await this.db.collection("eleitores").doc(bruto).get();
+      if(s.exists) return {id:s.id,ra:s.id,...s.data()};
+
+      // 2. Compatibilidade com RAs digitados com/sem pontuação.
+      const digitos=bruto.replace(/\D/g,"");
+      if(digitos && digitos!==bruto){
+        s=await this.db.collection("eleitores").doc(digitos).get();
+        if(s.exists) return {id:s.id,ra:s.id,...s.data()};
+      }
+
+      // 3. Último fallback: procura por campo ra, caso exista em dados antigos.
+      try{
+        const q=await this.db.collection("eleitores").where("ra","==",bruto).limit(1).get();
+        if(!q.empty){
+          const d=q.docs[0];
+          return {id:d.id,ra:d.id,...d.data()};
+        }
+      }catch(e){ console.warn("Busca alternativa de RA não disponível:",e); }
+
+      return null;
     },
     async addVoter(data){
       const ra=String(data.ra||"").trim();

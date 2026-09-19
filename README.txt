@@ -205,3 +205,25 @@ Na página candidato.html:
 - RA inativo bloqueia a candidatura;
 - nome e turma podem ser preenchidos automaticamente a partir do cadastro eleitoral;
 - uma nova conferência é feita no momento do envio, evitando contornar a validação visual.
+
+VERSÃO 3.6 - CORE EMBUTIDO
+--------------------------
+Para evitar falhas do GitHub Pages ao carregar core.js/firebase-config.js,
+gestor.html, candidato.html, urna.html e resultados.html agora contêm internamente
+a configuração e a lógica principal do sistema.
+
+Os arquivos core.js e firebase-config.js permanecem no pacote apenas como cópia de segurança.
+As páginas principais não dependem mais deles para funcionar.
+
+FOTOS DE CANDIDATOS - REESTRUTURAÇÃO 2026-09-18
+------------------------------------------------
+- A foto passou a ser obrigatória na candidatura.
+- Aceita JPEG, PNG e WebP na entrada.
+- O navegador recorta a imagem no formato retrato 3:4.
+- A imagem final é padronizada em 300 x 400 px e convertida para JPEG.
+- A compressão tenta manter o Base64 em aproximadamente 80 KB e bloqueia acima de 120 KB.
+- A foto continua salva no próprio documento da candidatura no Firestore; Firebase Storage não é necessário.
+- O Painel do Gestor continua exibindo a foto para análise.
+- A urna continua exibindo a foto do candidato ao reconhecer o número.
+- resultados.html agora também exibe as fotos dos candidatos e eleitos.
+- O snapshot público de resultados não copia RA para config/resultadoPublico; somente dados necessários à exibição pública.
