@@ -251,24 +251,24 @@
      };
 
      if(S.mode==="firebase" && S.db && window.firebase?.firestore){
-       // Atualiza o MESMO documento. Assim o número continua reservado e não
-       // pode ser sorteado para outro estudante.
-       const ref=S.db.collection("candidaturas").doc(anterior.id);
-       await S.db.runTransaction(async tx=>{
-         const snap=await tx.get(ref);
-         if(!snap.exists) throw new Error("CANDIDATURA_ANTERIOR_NAO_ENCONTRADA");
-         const atual=snap.data()||{};
-         if(normalizarRA(atual.ra)!==raNormalizado) throw new Error("RA_DIVERGENTE");
-         if(String(atual.status||"").trim().toLowerCase()!=="rejeitado"){
-           throw new Error("Esta candidatura não está liberada para nova tentativa.");
-         }
-         tx.update(ref,{
-           ...dados,
-           reenviadoEm:firebase.firestore.FieldValue.serverTimestamp()
-         });
+       // A tentativa rejeitada é preservada como histórico. Em vez de atualizar
+       // esse documento (o que exigiria liberar UPDATE público nas regras),
+       // criamos uma NOVA tentativa pendente com o MESMO número eleitoral.
+       // Como todos os números já usados continuam sendo considerados ocupados,
+       // esse número permanece reservado exclusivamente para este estudante.
+       await S.db.collection("candidaturas").add({
+         ...dados,
+         tentativaAnteriorId:anterior.id,
+         reenviadoEm:firebase.firestore.FieldValue.serverTimestamp(),
+         createdAt:firebase.firestore.FieldValue.serverTimestamp()
        });
      }else{
-       await S.updateCandidatura(anterior.id,{...dados,reenviadoEm:new Date().toISOString()});
+       // No modo demonstração também preservamos o histórico criando novo registro.
+       await S.saveCandidatura({
+         ...dados,
+         tentativaAnteriorId:anterior.id,
+         reenviadoEm:new Date().toISOString()
+       });
      }
 
      return {numero,dados,reenvio:true};

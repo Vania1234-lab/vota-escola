@@ -1,54 +1,18 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
     match /config/{doc} {
       allow read: if true;
       allow write: if request.auth != null;
     }
-
     match /candidaturas/{id} {
-      // Primeira inscrição continua pública enquanto as inscrições estiverem
-      // sendo feitas pelo site sem login do estudante.
       allow create: if true;
       allow read: if true;
-
-      // A gestão autenticada pode analisar/alterar candidaturas normalmente.
       allow update, delete: if request.auth != null;
-
-      // Recandidatura do próprio registro rejeitado:
-      // permite SOMENTE rejeitado -> pendente e preserva RA e número eleitoral.
-      allow update: if request.auth == null
-        && resource.data.status == 'rejeitado'
-        && request.resource.data.status == 'pendente'
-        && request.resource.data.ra == resource.data.ra
-        && request.resource.data.numeroEleitoral == resource.data.numeroEleitoral
-        && request.resource.data.cargos is list
-        && request.resource.data.cargos.size() == 1
-        && resource.data.cargos is list
-        && resource.data.cargos.size() == 1
-        && request.resource.data.cargos[0].numero == resource.data.cargos[0].numero
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'nome',
-          'turma',
-          'foto',
-          'propostas',
-          'cargo',
-          'cargos',
-          'status',
-          'motivoRejeicao',
-          'analisadoEm',
-          'reenviadoEm'
-        ]);
     }
-
-    // Lista oficial de eleitores e controle de participação por cargo.
-    // A urna precisa ler e atualizar o próprio registro pelo RA.
     match /eleitores/{ra} {
       allow read, write: if true;
     }
-
-    // O voto NÃO contém RA/nome do eleitor.
     match /votos/{id} {
       allow create: if true;
       allow read: if request.auth != null;
