@@ -21,8 +21,8 @@
         <div><label>Turma</label><input id="turma" placeholder="Ex.: 8º A" required></div>
         <div>
   <label>Foto do candidato</label>
-  <input id="fotoArquivo" type="file" accept="image/jpeg,image/png,image/webp" capture="user" required>
-  <p class="small muted">No celular, você pode escolher uma foto ou usar a câmera. O sistema recorta, redimensiona e comprime automaticamente a imagem antes de salvar (máx. 300 × 400 px).</p>
+  <input id="fotoArquivo" type="file" accept="image/*" required>
+  <p class="small muted">No celular, toque neste campo para escolher uma foto da galeria ou usar a câmera. No computador, escolha uma imagem salva. O sistema recorta, redimensiona e comprime automaticamente antes de salvar.</p>
   <img id="fotoPreview" class="hidden" alt="Prévia da foto" style="width:130px;height:160px;object-fit:cover;border-radius:12px;border:2px solid #d5dce3;margin-top:10px">
 </div>
       </div>
@@ -57,40 +57,61 @@
 
  const fotoInput=document.getElementById("fotoArquivo");
  const fotoPreview=document.getElementById("fotoPreview");
+ let previewObjectURL=null;
+
+ function limparPreviewFoto(){
+   if(previewObjectURL){ URL.revokeObjectURL(previewObjectURL); previewObjectURL=null; }
+   fotoPreview.classList.add("hidden");
+   fotoPreview.removeAttribute("src");
+ }
+
  fotoInput.addEventListener("change", ()=>{
+   limparPreviewFoto();
    const file=fotoInput.files && fotoInput.files[0];
-   if(!file){ fotoPreview.classList.add("hidden"); fotoPreview.removeAttribute("src"); return; }
-   if(!file.type.startsWith("image/")){ show("Selecione um arquivo de imagem.",false); fotoInput.value=""; return; }
-   if(file.size > 5 * 1024 * 1024){ show("A foto deve ter no máximo 5 MB.",false); fotoInput.value=""; return; }
-   fotoPreview.src=URL.createObjectURL(file);
+   if(!file) return;
+   if(file.type && !file.type.startsWith("image/")){
+     show("Selecione um arquivo de imagem.",false); fotoInput.value=""; return;
+   }
+   // Não rejeitamos fotos grandes aqui: elas serão reduzidas no navegador.
+   // Isso é importante para câmeras de celulares atuais, que geram arquivos grandes.
+   previewObjectURL=URL.createObjectURL(file);
+   fotoPreview.src=previewObjectURL;
    fotoPreview.classList.remove("hidden");
  });
+
+ async function carregarImagem(file){
+   // Object URL evita transformar a foto original inteira em Base64 antes da compressão,
+   // reduzindo bastante o consumo de memória em celulares.
+   const objectURL=URL.createObjectURL(file);
+   try{
+     const img=await new Promise((resolve,reject)=>{
+       const el=new Image();
+       el.onload=()=>resolve(el);
+       el.onerror=()=>reject(new Error("FORMATO_FOTO_NAO_SUPORTADO"));
+       el.src=objectURL;
+     });
+     return img;
+   } finally {
+     // O navegador já decodificou a imagem quando onload dispara.
+     // Revogar aqui não invalida o objeto Image já carregado.
+     URL.revokeObjectURL(objectURL);
+   }
+ }
 
  async function obterFotoURL(){
    const file=fotoInput.files && fotoInput.files[0];
    if(!file) throw new Error("Envie uma foto do candidato.");
-   if(!file.type.startsWith("image/")) throw new Error("Selecione um arquivo de imagem.");
-   if(file.size > 8 * 1024 * 1024) throw new Error("A foto original deve ter no máximo 8 MB.");
+   if(file.type && !file.type.startsWith("image/")) throw new Error("Selecione um arquivo de imagem.");
 
-   const dataURL=await new Promise((resolve,reject)=>{
-     const reader=new FileReader();
-     reader.onerror=()=>reject(new Error("Não foi possível ler a foto."));
-     reader.onload=()=>resolve(reader.result);
-     reader.readAsDataURL(file);
-   });
+   let img;
+   try{
+     img=await carregarImagem(file);
+   }catch(err){
+     throw new Error("Não foi possível abrir esta foto. Se ela estiver em HEIC/HEIF e o aparelho não conseguir convertê-la, escolha outra foto ou faça uma captura pela câmera em formato compatível.");
+   }
 
-   const img=await new Promise((resolve,reject)=>{
-     const el=new Image();
-     el.onload=()=>resolve(el);
-     el.onerror=()=>reject(new Error("Não foi possível processar a foto."));
-     el.src=dataURL;
-   });
-
-   // Limite seguro para a string Base64 que será gravada no Firestore.
-   // A compressão é automática: primeiro reduz qualidade; se necessário,
-   // reduz também as dimensões, sem qualquer ação extra do estudante.
-   const META_BYTES=80 * 1024;
-   const LIMITE_BYTES=95 * 1024;
+   const META_BYTES=82 * 1024;
+   const LIMITE_BYTES=96 * 1024;
    const targetRatio=3/4;
 
    function tamanhoBase64(data){
@@ -100,18 +121,24 @@
    }
 
    function criarCanvas(outW,outH){
-     let sx=0, sy=0, sw=img.naturalWidth, sh=img.naturalHeight;
+     const iw=img.naturalWidth || img.width;
+     const ih=img.naturalHeight || img.height;
+     if(!iw || !ih) throw new Error("A foto selecionada não possui dimensões válidas.");
+
+     let sx=0, sy=0, sw=iw, sh=ih;
      const sourceRatio=sw/sh;
      if(sourceRatio > targetRatio){
        sw=Math.round(sh*targetRatio);
-       sx=Math.round((img.naturalWidth-sw)/2);
+       sx=Math.round((iw-sw)/2);
      }else if(sourceRatio < targetRatio){
        sh=Math.round(sw/targetRatio);
-       sy=Math.round((img.naturalHeight-sh)/2);
+       sy=Math.round((ih-sh)/2);
      }
+
      const canvas=document.createElement("canvas");
      canvas.width=outW; canvas.height=outH;
      const ctx=canvas.getContext("2d",{alpha:false});
+     if(!ctx) throw new Error("Este navegador não conseguiu preparar a foto.");
      ctx.fillStyle="#ffffff";
      ctx.fillRect(0,0,outW,outH);
      ctx.imageSmoothingEnabled=true;
@@ -120,10 +147,10 @@
      return canvas;
    }
 
-   // Começa em 300x400. Só reduz a resolução se a compressão de qualidade
-   // não for suficiente para atingir aproximadamente 80 KB.
-   const dimensoes=[[300,400],[270,360],[240,320],[210,280],[180,240]];
-   const qualidades=[0.78,0.70,0.62,0.54,0.46,0.38,0.32];
+   // A foto final é pequena de propósito: ela fica dentro do próprio documento
+   // da candidatura no Firestore, sem depender do Firebase Storage.
+   const dimensoes=[[300,400],[270,360],[240,320],[210,280],[180,240],[150,200]];
+   const qualidades=[0.80,0.72,0.64,0.56,0.48,0.40,0.32,0.26];
    let melhor="", melhorBytes=Infinity;
 
    for(const [w,h] of dimensoes){
@@ -132,9 +159,7 @@
        const data=canvas.toDataURL("image/jpeg",q);
        const bytes=tamanhoBase64(data);
        if(bytes < melhorBytes){ melhor=data; melhorBytes=bytes; }
-       if(bytes <= META_BYTES){
-         return data;
-       }
+       if(bytes <= META_BYTES) return data;
      }
    }
 
@@ -368,8 +393,7 @@
      const {numero,reenvio}=await gerarESalvarCandidatura(dadosBase);
 
      e.target.reset();
-     fotoPreview.classList.add("hidden");
-     fotoPreview.removeAttribute("src");
+     limparPreviewFoto();
      show(reenvio ? `Nova tentativa enviada com sucesso! Seu número eleitoral continua sendo ${numero}. A candidatura voltou para análise da comissão eleitoral.` : `Candidatura enviada com sucesso! Seu número eleitoral é ${numero}. A candidatura está aguardando aprovação da comissão eleitoral.`,true);
    }catch(err){
      console.error("Erro ao enviar candidatura:",err);
